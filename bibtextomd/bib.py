@@ -3,7 +3,8 @@
 from datetime import datetime
 import argparse
 import warnings
-
+import re
+import logging
 # Package imports
 from bibtexparser.bparser import BibTexParser
 from bibtexparser.customization import convert_to_unicode
@@ -14,10 +15,42 @@ em = '_'
 strong = '**'
 
 # Set some HTML tags to go around each part of the reference.
-open_span = '<span>'
+open_span = 'span'
 close_span = '</span>'
 
+def format_year(year):
+    write_year = '\n\n### {} ### {{.year}}\n'.format(year)
+    return(write_year)
 
+def format_cat(cat):
+    write_cat = '\n\n## {} ##\n'.format(cat)
+    return(write_cat)
+
+def format_date(ref):
+    month = ref["month"].title()
+    year = ref["year"]
+    if month == "May":
+        month += ' '
+    else:
+        month += '. '
+    write_date = '<{open} markdown="1" class="paperdate">{month}{year}{close}\n'.format(month=month, year=year, open = open_span, close = close_span)
+    return(write_date)
+
+def format_link(ref):
+    write_link = '<{open} markdown="1" class="paperlink">'.format(open = open_span)
+    
+    if "doi" in ref:
+        write_link += (' [<i class="ai ai-doi"></i>](https://dx.doi.org/{doi})'.format(doi=ref["doi"]))
+    if "url" in ref:
+        url = re.sub(r' .*', '', ref["url"])
+        write_link += (' [<i class="icon fa-external-link"></i>]({url})'.format(url=url))
+    if "pmid" in ref:
+        write_link += (' [<i class="ai ai-pubmed"></i>](https://www.ncbi.nlm.nih.gov/pubmed/{pmid})'.format(pmid=ref["pmid"]))
+
+    write_link += ('{close}\n'.format(close=close_span))
+    return(write_link)
+
+        
 # First is to define a function to format the names we get from BibTeX,
 # since this task will be the same for every paper type.
 def reorder(names, faname):
@@ -143,14 +176,16 @@ def journal_article(ref, faname):
     # before the newline so that kramdown inserts an HTML <br>
     # there.
     reference = (
-        '\n{{:.paper}}\n{open}{title}{close}{{:.papertitle}}  \n'
-        '{open}{authors}{close}{{:.authors}}  \n'
-        '{open}{em}{journal}{em}, '.format(
-            open=open_span, close=close_span, title=title, authors=authors, em=em,
+        '\n\n\n<div markdown="1" class="paper">'
+        '\n<{open} markdown="1" class="papertitle">{title}{close}'
+        '\n<{open} markdown="1" class="paperauthors">{authors}{close}'
+        '\n<{open} markdown="1" class="paperjournal">{em}{journal}{em} '.format(
+            open = open_span,
+            close=close_span,
+            title=title, authors=authors, em=em,
             journal=journal,
             )
         )
-
     # Not all journal articles will have vol., no., and pp.
     # because some may be "In Press".
     if "volume" in ref:
@@ -162,38 +197,12 @@ def journal_article(ref, faname):
     if "pages" in ref:
         reference += 'pp. ' + ref["pages"] + ', '
 
-    month = ref["month"].title()
-    year = ref["year"]
-    if month == "May":
-        month += ' '
-    else:
-        month += '. '
+    reference += close_span
+    reference += format_date(ref)
+    reference += format_link(ref)
 
-    reference += (
-        '{month}{year}{close}{{:.journal}}  \n'.format(
-            month=month, year=year, close=close_span,
-            )
-        )
-
-    if "doi" in ref:
-        reference += (
-            '{open}{strong}DOI:{strong} [{doi}]'
-            '(https://dx.doi.org/{doi}){close}{{:.doi}}  \n'.format(
-                open=open_span, close=close_span, strong=strong,
-                doi=ref["doi"],
-                )
-            )
-
-    # Extra comments, such as links to files, should be stored
-    # as "Notes" for each reference in Mendeley. Mendeley will
-    # export this field with the tag "annote" in BibTeX.
-    if "annote" in ref:
-        reference += (
-            '{open}{annote}{close}{{:.comment}}  \n'.format(
-                open=open_span, close=close_span,
-                annote=ref["annote"].replace('\\', ''),
-                )
-            )
+    # close div
+    reference += "</div>"
     return reference
 
 
@@ -204,10 +213,13 @@ def in_proceedings(ref, faname):
 
     # Start building the reference string.
     reference = (
-        '\n{{:.paper}}\n{open}{title}{close}{{:.papertitle}}  \n'
-        '{open}{authors}{close}{{:.authors}}  \n'
-        '{open}'.format(
-            open=open_span, close=close_span, title=title, authors=authors,
+        '\n\n\n<div markdown="1" class="paper">'
+        '\n<{open} markdown="1" class="papertitle">{title}{close}'
+        '\n<{open} markdown="1" class="paperauthors">{authors}{close}'
+        '\n<{open} markdown="1" class="paperjournal">'.format(
+            open = open_span,
+            close=close_span,
+            title=title, authors=authors, em=em,
             )
         )
 
@@ -228,37 +240,11 @@ def in_proceedings(ref, faname):
     if "address" in ref:
         reference += ref["address"] + ', '
 
-    month = ref["month"].title()
-    if month == "May":
-        month += ' '
-    else:
-        month += '. '
+    reference += format_date(ref)
+    reference += format_link(ref)
 
-    reference += (
-        '{month}{year}{close}{{:.journal}}  \n'.format(
-            month=month, year=year, close=close_span,
-            )
-        )
-
-    if "doi" in ref:
-        reference += (
-            '{open}{strong}DOI:{strong} [{doi}]'
-            '(https://dx.doi.org/{doi}){close}{{:.doi}}  \n'.format(
-                open=open_span, strong=strong, doi=ref["doi"],
-                close=close_span,
-                )
-            )
-
-    # Extra comments, such as links to files, should be stored
-    # as "Notes" for each reference in Mendeley. Mendeley will
-    # export this field with the tag "annote" in BibTeX.
-    if "annote" in ref:
-        reference += (
-            '{open}{annote}{close}{{:.comment}}  \n'.format(
-                open=open_span, annote=ref["annote"].replace('\\', ''),
-                close=close_span,
-                )
-            )
+    # close div
+    reference += "</div>"
     return reference
 
 
@@ -267,44 +253,39 @@ def thesis(ref, faname):
     title = ref["title"]
     year = ref["year"]
 
+    # Start building the reference string.
     reference = (
-        '\n{{:.paper}}\n{open}{title}{close}{{:.papertitle}}  \n'
-        '{open}{authors}{close}{{:.authors}}  \n'
-        '{open}'.format(
-            open=open_span, close=close_span, title=title, authors=authors,
+        '\n\n\n<div markdown="1" class="paper">'
+        '\n<{open} markdown="1" class="papertitle">{title}{close}'
+        '\n<{open} markdown="1" class="paperauthors">{authors}{close}'
+        '\n<{open} markdown="1" class="paperjournal">'.format(
+            open = open_span,
+            close=close_span,
+            title=title, authors=authors, em=em,
             )
         )
+
     if "school" in ref:
         reference += ref["school"] + ', '
-    if "month" in ref:
-        month = ref["month"].title()
-        if month == "May":
-            month += ' '
-        else:
-            month += '. '
-        reference += month
+    reference += format_date(ref)
+    reference += format_link(ref)
 
-    reference += year + close_span + '{:.journal}  \n'
-
-    if "annote" in ref:
-        reference += (
-            '{open}{annote}{close}{{:.comment}}  \n'.format(
-                open=open_span, annote=ref["annote"].replace('\\', ''),
-                close=close_span,
-                )
-            )
+    # close div
+    reference += "</div>"
     return reference
 
 
 def load_bibtex(bib_file_name):
     # Open and parse the BibTeX file in `bib_file_name` using
     # `bibtexparser`
+    logging.info("Create Parser")
     with open(bib_file_name, 'r') as bib_file:
-        bp = BibTexParser(bib_file.read(), customization=convert_to_unicode)
+        bp = BibTexParser(bib_file.read(), customization=convert_to_unicode, ignore_nonstandard_types=True)
 
     # Get a dictionary of dictionaries of key, value pairs from the
     # BibTeX file. The structure is
     # {ID:{authors:...},ID:{authors:...}}.
+    logging.info("Load it")
     refsdict = bp.get_entry_dict()
 
     # Create a list of all the types of documents found in the BibTeX
@@ -331,6 +312,9 @@ def load_bibtex(bib_file_name):
 
 
 def main(argv):
+    logging.basicConfig(level=logging.INFO)
+    logging.info("STARTING IT")
+    
     arg_parser = argparse.ArgumentParser(
         description=(
             "Convert a BibTeX file to kramdown output with optional author highlighting."
@@ -355,11 +339,13 @@ def main(argv):
         type=str,
         )
 
+    logging.info("args")
     args = arg_parser.parse_args(argv)
     bib_file_name = args.bibfile
     output_file_name = args.output
     faname = args.author
 
+    logging.info("read bibtex")
     sort_dict = load_bibtex(bib_file_name)
 
     # Open the output file with utf-8 encoding, write mode, and Unix
@@ -368,7 +354,7 @@ def main(argv):
               newline='') as out_file:
 
         # Start with journal articles.
-        out_file.write('Journal Articles\n---\n')
+        out_file.write(format_cat('Journal Articles'))
 
         # To get the year numbering correct, we have to set a dummy
         # value for pubyear (usage described below).
@@ -380,6 +366,7 @@ def main(argv):
         # information for each reference type. Therefore, its easiest
         # to write out the logic for each loop instead of writing the
         # logic into a function and calling that.
+        logging.info("ARTICLES")
         for ref in sort_dict["article"]:
             # Get the publication year. If the year of the current
             # reference is not equal to the year of the previous
@@ -387,47 +374,35 @@ def main(argv):
             year = ref["year"]
             if year != pubyear:
                 pubyear = year
-                write_year = '\n{{:.year}}\n### {}\n'.format(year)
-                out_file.write(write_year)
+                out_file.write(format_year(year))
 
             out_file.write(journal_article(ref, faname))
 
         # Next are conference papers and posters.
-        out_file.write('\nConference Publications and Posters\n---\n')
+        out_file.write(format_cat('Conference Publications and Posters'))
 
         # Same trick for the pubyear as for the journal articles.
         pubyear = ''
 
         # Loop through the references in the `inproceedings` type.
+        logging.info("CONFERENCES")
         for ref in sort_dict["inproceedings"]:
             year = ref["year"]
             if year != pubyear:
                 pubyear = year
-                write_year = '\n{{:.year}}\n### {}\n'.format(year)
-                out_file.write(write_year)
+                out_file.write(format_year(year))
 
             out_file.write(in_proceedings(ref, faname))
 
         # Finally are the theses and dissertations. Same general logic
         # as for the other reference types.
+        logging.info("PhD Thesis")
         pubyear = ''
         for ref in sort_dict["phdthesis"]:
-            out_file.write("\nPh.D. Dissertation\n---\n\n")
+            out_file.write(format_cat(ref['type']))
             year = ref["year"]
             if year != pubyear:
                 pubyear = year
-                write_year = '{{:.year}}\n### {}\n'.format(year)
-                out_file.write(write_year)
-
-            out_file.write(thesis(ref, faname))
-
-        pubyear = ''
-        for ref in sort_dict["mastersthesis"]:
-            out_file.write("\nMaster's Thesis\n---\n\n")
-            year = ref["year"]
-            if year != pubyear:
-                pubyear = year
-                write_year = '{{:.year}}\n### {}\n'.format(year)
-                out_file.write(write_year)
+                out_file.write(format_year(year))
 
             out_file.write(thesis(ref, faname))
